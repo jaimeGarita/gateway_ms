@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  user_management_ms:
+    container_name: user_management_ms
+    image: user_management_ms
+    ports:
+      - "8000:8000"
+    networks:
+      hfnet:
+        ipv4_address: 192.168.55.4
+    depends_on:
+      - databases
+    restart: always
+
+  nginx:
+    image: nginx
+    container_name: nginx
+    ports:
+      - "80:80"
+    networks:
+      hfnet:
+        ipv4_address: 192.168.55.2
+    volumes:
+      - ./server/nginx.conf:/api/nginx.conf
+      - ./server/api_gateway.conf:/api/api_gateway.conf
+      - ./server/api_backends.conf:/api/api_backends.conf
+      - ./api:/etc/nginx/api_conf.d
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - 22181:2181
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - 29092:29092
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+  kafka-consumer:
+    image: wurstmeister/kafka
+    depends_on:
+      - kafka
+    command: ["kafka-console-consumer.sh", "--bootstrap-server", "kafka:9092", "--topic", "topic-1"]
+
+
+  databases:
+    image: postgres
+    container_name: databases
+    volumes:
+       - ./script/multiple-databases.sh:/docker-entrypoint-initdb.d/multiple-databases.sh
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_MULTIPLE_DATABASES: tickets,users
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+
+
+networks:
+  hfnet:
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 192.168.55.0/24
+          gateway: 192.168.55.1
+
+volumes:
+  data-postgres:
